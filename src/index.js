@@ -1,7 +1,7 @@
 const express = require('express');
 const multer = require('multer');
 const mongoose = require('mongoose');
-const { PDFDocument } = require('pdf-lib');
+const sharp = require('sharp');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -40,49 +40,48 @@ app.post('/upload', upload.single('pdfData'), async (req, res) => {
 
 app.get('/download/:id', async (req, res) => {
     try {
-        const fileId = req.params.id;
-        const file = await Files.findById(fileId);
-
-        if (!file) {
-            return res.status(404).json({ error: 'File not found' });
-        }
-
-        const value = file.pdfData;
-        const url = value.split(';base64,')[1];
-
-        const decodedPdfData = Buffer.from(url, 'base64');
-
-        // Load the original PDF document
-        const pdf = await PDFDocument.load(decodedPdfData);
-        const [page] = await pdf.getPages();
-
-        const cropX = 50;
-        const cropY = 50;
-        const cropWidth = page.getWidth() - 100;
-        const cropHeight = page.getHeight() - 100;
-
-        // Modify the PDF using the `modifyPdf` method
-        const modifiedPdfBytes = await PDFDocument.modifyPdf(decodedPdfData, doc => {
-            const [modifiedPage] = doc.getPages();
-            modifiedPage.setSize([cropWidth, cropHeight]);
-            modifiedPage.drawPage(page, {
-                x: -cropX,
-                y: -cropY,
-                width: page.getWidth(),
-                height: page.getHeight(),
-                opacity: 1,
-            });
-        });
-
-        res.setHeader('Content-Disposition', `attachment; filename=file_${fileId}.pdf`);
-        res.setHeader('Content-Type', 'application/pdf');
-
-        // Send the modified PDF file as the response
-        res.send(modifiedPdfBytes);
+      const fileId = req.params.id;
+      const file = await Files.findById(fileId);
+      if (!file) {
+        return res.status(404).json({ error: 'File not found' });
+      }
+      const value = file.pdfData
+      const url = value.split(';base64,')[1]
+  
+      const decodedPdfData = Buffer.from(url, 'base64');
+  
+      res.setHeader('Content-Disposition', `attachment; filename=file_${fileId}.pdf`);
+      res.setHeader('Content-Type', 'application/pdf');
+  
+      // Send the decoded PDF file as the response
+      res.send(decodedPdfData);
     } catch (error) {
-        console.error(error);
-        res.status(500).json({ error: 'Internal Server Error', details: error.message });
+      console.error(error);
+      res.status(500).json({ error: 'Internal Server Error', details: error.message });
     }
+  });
+
+app.get('/download/image/:id', async (req, res) => {
+  try {
+    const fileId = req.params.id;
+    const file = await Files.findById(fileId);
+    if (!file) {
+      return res.status(404).json({ error: 'File not found' });
+    }
+    const value = file.pdfData
+    const url = value
+
+    const decodedImageData = Buffer.from(url, 'base64');
+
+    const croppedImage = await sharp(decodedImageData).resize(50, 100).extract({ left: 0, top: 0, width: 50, height: 50 }).toBuffer()
+    res.setHeader('Content-Type', 'image/jpeg'); 
+    res.setHeader('Content-Disposition', 'attachment; filename=image.jpeg');
+
+    res.send(croppedImage);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Internal Server Error', details: error.message });
+  }
 });
 
 app.get('/getData', async (req, res) => {
