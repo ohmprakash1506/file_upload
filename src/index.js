@@ -2,6 +2,9 @@ const express = require('express');
 const multer = require('multer');
 const mongoose = require('mongoose');
 const sharp = require('sharp');
+const fs = require('fs');
+const path = require('path');
+const os = require('os')
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -21,7 +24,7 @@ app.use(express.json());
 
 app.post('/upload', upload.single('pdfData'), async (req, res) => {
   try {
-    // Check if req.file is present and contains the buffer
+    
     if (!req.file || !req.file.buffer) {
       return res.status(400).json({ error: 'No file uploaded' });
     }
@@ -38,28 +41,53 @@ app.post('/upload', upload.single('pdfData'), async (req, res) => {
   }
 });
 
-app.get('/download/:id', async (req, res) => {
-    try {
-      const fileId = req.params.id;
-      const file = await Files.findById(fileId);
-      if (!file) {
-        return res.status(404).json({ error: 'File not found' });
+const downloadsDir = path.join(__dirname, 'downloads');
+if (!fs.existsSync(downloadsDir)) {
+    fs.mkdirSync(downloadsDir);
+}
+
+app.get('/download/all', async (req, res) => {
+  try {
+      const files = await Files.find();
+      if (!files || files.length === 0) {
+          return res.status(404).json({ error: 'No files found' });
       }
-      const value = file.pdfData
-      const url = value.split(';base64,')[1]
-  
-      const decodedPdfData = Buffer.from(url, 'base64');
-  
-      res.setHeader('Content-Disposition', `attachment; filename=file_${fileId}.pdf`);
-      res.setHeader('Content-Type', 'application/pdf');
-  
-      // Send the decoded PDF file as the response
-      res.send(decodedPdfData);
-    } catch (error) {
+
+      const desktopDir = path.join(os.homedir(), 'Desktop'); // Get user's desktop directory
+      const download = files.map(async (file) => {
+          const value = file.pdfData;
+          const url = value.split(';base64,')[1];
+          const decodedPdfData = Buffer.from(url, 'base64');
+          const fileId = file._id;
+          const fileName = `file_${fileId}.pdf`;
+          const filePath = path.join(desktopDir, fileName);
+
+          return new Promise((resolve, reject) => {
+              fs.writeFile(filePath, decodedPdfData, (err) => {
+                  if (err) {
+                      console.error(err);
+                      reject(err);
+                  } else {
+                      console.log(`File ${fileName} saved to desktop.`);
+                      resolve({ fileName });
+                  }
+              });
+          });
+      });
+
+      Promise.all(download)
+          .then((results) => {
+              res.json({ message: 'Files downloaded and saved to desktop successfully', files: results });
+          })
+          .catch((error) => {
+              console.error(error);
+              res.status(500).json({ error: 'Error downloading or saving files' });
+          });
+  } catch (error) {
       console.error(error);
       res.status(500).json({ error: 'Internal Server Error', details: error.message });
-    }
-  });
+  }
+});
 
 app.get('/download/image/:id', async (req, res) => {
   try {
